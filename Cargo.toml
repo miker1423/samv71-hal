@@ -1,0 +1,24 @@
+[package]
+name = "samv71-hal"
+version = "0.1.0"
+authors = ["Miguel Pérez García <miguelpg_95@hotmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+cortex-m = "0.6.4"
+embedded-hal = { version = "0.2.4", features = ["unproven"] }
+nb = "1.0.0"
+atsamv71q21 = { version = "0.1.0", path = "../atsamv71q21"}
+
+[dependencies.void]
+default-features = false
+version = "1.0.2"
+
+[dependencies.cast]
+default-features = false
+version = "0.2.3"
+
+[features]
+rt = ["atsamv71q21/rt"]
