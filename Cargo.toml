@@ -22,3 +22,7 @@ version = "0.2.3"
 
 [features]
 rt = ["atsamv71q21/rt"]
+
+[[example]]
+name = "uart_example"
+required-features = ["rt"]
