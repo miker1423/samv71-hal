@@ -1,11 +1,8 @@
 use embedded_hal::serial::{Read, Write};
-use embedded_hal::prelude::*;
-use core::{
-    marker::PhantomData,
-    ops::Deref,
-    convert::Infallible
-};
+use core::convert::{ Infallible, Into };
+use core::marker::PhantomData;
 use crate::gpio::*;
+use crate::pac::PMC;
 
 pub enum Parity {
     Even,
@@ -29,6 +26,12 @@ pub enum UartError {
 }
 
 pub struct BaudRate(pub u16);
+
+impl Into<BaudRate> for u16 {
+    fn into(self) -> BaudRate {
+        BaudRate(self)
+    }
+}
 
 pub trait RxPin<UART> {}
 pub trait TxPin<UART> {}
@@ -72,15 +75,11 @@ uart_pins! {
     }
 }
 
-type SerialRegisterBlock = crate::pac::uart2::RegisterBlock;
-
 pub struct Rx<UART> {
-    uart: *const SerialRegisterBlock,
     _instance: PhantomData<UART>,
 }
 
 pub struct Tx<UART> {
-    uart: *const SerialRegisterBlock,
     _instance: PhantomData<UART>,
 }
 
@@ -89,63 +88,7 @@ pub struct Serial<UART, TXPIN, RXPIN> {
     pins: (TXPIN, RXPIN),
 }
 
-impl<UART> Read<u8> for Rx<UART>
-    where
-        UART: Deref<Target = SerialRegisterBlock>
-{
-    type Error = UartError;
-
-    fn read(&mut self) -> nb::Result<u8, Self::Error> {
-        read(self.uart)
-    }
-}
-
-impl<UART, TXPIN, RXPIN> Read<u8> for Serial<UART, TXPIN, RXPIN>
-    where
-        UART: Deref<Target = SerialRegisterBlock>,
-        RXPIN: RxPin<UART>,
-{
-    type Error = UartError;
-
-    fn read(&mut self) -> nb::Result<u8, Self::Error> {
-        read(&*self.uart)
-    }
-}
-
-impl<UART> Write<u8> for Tx<UART>
-    where
-        UART: Deref<Target = SerialRegisterBlock>
-{
-    type Error = Infallible;
-
-    fn write(&mut self, byte: u8) -> nb::Result<(), Self::Error> {
-        write(self.uart, byte)
-    }
-
-    fn flush(&mut self) -> nb::Result<(), Self::Error> {
-        flush(self.uart)
-    }
-}
-
-impl<UART, TXPIN, RXPIN> Write<u8> for Serial<UART, TXPIN, RXPIN>
-    where
-        UART: Deref<Target = SerialRegisterBlock>,
-        TXPIN: TxPin<UART>,
-{
-    type Error = Infallible;
-
-    fn write(&mut self, byte: u8) -> nb::Result<(), Self::Error> {
-        write(&*self.uart, byte)
-    }
-
-    fn flush(&mut self) -> nb::Result<(), Self::Error> {
-        flush(&*self.uart)
-    }
-}
-
 impl<UART, TXPIN, RXPIN> Serial<UART, TXPIN, RXPIN>
-    where
-        UART: Deref<Target = SerialRegisterBlock>
 {
     pub fn split(self) -> (Tx<UART>, Rx<UART>)
         where
@@ -154,83 +97,20 @@ impl<UART, TXPIN, RXPIN> Serial<UART, TXPIN, RXPIN>
     {
         (
             Tx {
-                uart: &*self.uart,
                 _instance: PhantomData,
             },
             Rx {
-                uart: &*self.uart,
                 _instance: PhantomData,
             }
         )
     }
 
-    pub fn release(self) -> (UART, (TXPIN, RXPIN)) {
-        (self.uart, self.pins)
+    pub fn release(self) -> (TXPIN, RXPIN) {
+        self.pins
     }
 }
 
-impl<UART> core::fmt::Write for Tx<UART>
-    where
-        Tx<UART>: embedded_hal::serial::Write<u8>,
-{
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        s.as_bytes()
-            .iter()
-            .try_for_each(|c| nb::block!(self.write(*c)))
-            .map_err(|_| core::fmt::Error)
-    }
-}
 
-impl<UART, TXPIN, RXPIN> core::fmt::Write for Serial<UART, TXPIN, RXPIN>
-    where
-        UART: Deref<Target = SerialRegisterBlock>,
-        TXPIN: TxPin<UART>,
-{
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        s.as_bytes()
-            .iter()
-            .try_for_each(|c| nb::block!(self.write(*c)))
-            .map_err(|_| core::fmt::Error)
-    }
-}
-
-fn flush(uart: *const SerialRegisterBlock) -> nb::Result<(), Infallible> {
-    let status_register = unsafe { (*uart).sr.read() };
-    if status_register.txempty().bit_is_set() {
-        Ok(())
-    } else {
-        Err(nb::Error::WouldBlock)
-    }
-
-}
-
-fn write(uart: *const SerialRegisterBlock, byte: u8) -> nb::Result<(), Infallible> {
-    let status_register = unsafe { (*uart).sr.read() };
-    if status_register.txrdy().bit_is_set() {
-        let thr = unsafe { &(*uart).thr };
-        thr.write_with_zero(|w| unsafe { w.txchr().bits(byte) });
-        nb::Result::Ok(())
-    } else {
-        nb::Result::Err(nb::Error::WouldBlock)
-    }
-}
-
-fn read(uart: *const SerialRegisterBlock) -> nb::Result<u8, UartError> {
-    let status_register = unsafe { (*uart).sr.read() };
-    if status_register.ovre().bit() {
-        Err(nb::Error::Other(UartError::Overrun))
-    } else if status_register.frame().bit() {
-        Err(nb::Error::Other(UartError::Framing))
-    } else if status_register.pare().bit() {
-        Err(nb::Error::Other(UartError::Parity))
-    } else if status_register.rxrdy().bit() {
-        let rhr = unsafe { (*uart).rhr.read() };
-        let value = rhr.rxchr().bits();
-        Ok(value)
-    } else {
-        nb::Result::Err(nb::Error::WouldBlock)
-    }
-}
 
 pub struct Config {
     baud_rate: BaudRate,
@@ -253,11 +133,11 @@ trait ConfigMethod {
 
     fn get_mode(&self, mode: &ChannelMode) -> Self::Mode;
 
-    fn configure(&self, config: Config);
+    fn configure(&self, config: Config, pmc: &PMC);
 }
 
 macro_rules! uart {
-    ($($UART:ident: ($uart:ident, $uarttx: ident, $uartrx:ident),)+) => {
+    ($($UART:ident: ($uart:ident, $uarttx: ident, $uartrx:ident, $pmc_pcerx:ident, $pid:ident),)+) => {
         $(
             use crate::pac::$UART;
 
@@ -266,22 +146,151 @@ macro_rules! uart {
                 TXPIN: TxPin<$UART>,
                 RXPIN: RxPin<$UART>,
             {
-                pub fn $uart(uart: $UART, pins: (TXPIN, RXPIN), config: Config) -> Self {
+                pub fn $uart(uart: $UART, pins: (TXPIN, RXPIN), config: Config, pmc: &PMC) -> Self {
                     let serial = Serial { uart, pins };
-                    serial.configure(config);
+                    serial.configure(config, pmc);
                     serial.uart.cr.write_with_zero(|w| w.txen().set_bit().rxen().set_bit());
                     serial
                 }
             }
 
+            impl core::fmt::Write for Tx<$UART>
+                where
+                    Tx<$UART>: embedded_hal::serial::Write<u8>,
+            {
+                fn write_str(&mut self, s: &str) -> core::fmt::Result {
+                    s.as_bytes()
+                        .iter()
+                        .try_for_each(|c| nb::block!(self.write(*c)))
+                        .map_err(|_| core::fmt::Error)
+                }
+            }
+
+            impl<TXPIN, RXPIN> core::fmt::Write for Serial<$UART, TXPIN, RXPIN>
+                where
+                    TXPIN: TxPin<$UART>,
+            {
+                fn write_str(&mut self, s: &str) -> core::fmt::Result {
+                    s.as_bytes()
+                        .iter()
+                        .try_for_each(|c| nb::block!(self.write(*c)))
+                        .map_err(|_| core::fmt::Error)
+                }
+            }
+
+            impl<TXPIN, RXPIN> Read<u8> for Serial<$UART, TXPIN, RXPIN>
+                where
+                RXPIN: RxPin<$UART>
+            {
+                type Error = UartError;
+
+                fn read(&mut self) -> nb::Result<u8, Self::Error> {
+                    let status_register = unsafe { (&*$UART::ptr()).sr.read() };
+                    if status_register.ovre().bit() {
+                        Err(nb::Error::Other(UartError::Overrun))
+                    } else if status_register.frame().bit() {
+                        Err(nb::Error::Other(UartError::Framing))
+                    } else if status_register.pare().bit() {
+                        Err(nb::Error::Other(UartError::Parity))
+                    } else if status_register.rxrdy().bit() {
+                        let rhr = unsafe { (&*$UART::ptr()).rhr.read() };
+                        let value = rhr.rxchr().bits();
+                        Ok(value)
+                    } else {
+                        nb::Result::Err(nb::Error::WouldBlock)
+                    }
+                }
+            }
+
+            impl Read<u8> for Rx<$UART>
+            {
+                type Error = UartError;
+
+                fn read(&mut self) -> nb::Result<u8, Self::Error>
+                {
+                    let status_register = unsafe { (&*$UART::ptr()).sr.read() };
+                    if status_register.ovre().bit() {
+                        Err(nb::Error::Other(UartError::Overrun))
+                    } else if status_register.frame().bit() {
+                        Err(nb::Error::Other(UartError::Framing))
+                    } else if status_register.pare().bit() {
+                        Err(nb::Error::Other(UartError::Parity))
+                    } else if status_register.rxrdy().bit() {
+                        let rhr = unsafe { (&*$UART::ptr()).rhr.read() };
+                        let value = rhr.rxchr().bits();
+                        Ok(value)
+                    } else {
+                        nb::Result::Err(nb::Error::WouldBlock)
+                    }
+                }
+            }
+
+
+            impl<TXPIN, RXPIN> Write<u8> for Serial<$UART, TXPIN, RXPIN>
+                where
+                    TXPIN: TxPin<$UART>,
+            {
+                type Error = Infallible;
+
+                fn write(&mut self, byte: u8) -> nb::Result<(), Self::Error>
+                {
+                    let status_register = unsafe { (&*$UART::ptr()).sr.read() };
+                    if status_register.txrdy().bit_is_set() {
+                        let uart = unsafe { (&*$UART::ptr()) };
+                        uart.thr.write_with_zero(|w| unsafe { w.txchr().bits(byte) });
+                        nb::Result::Ok(())
+                    } else {
+                        nb::Result::Err(nb::Error::WouldBlock)
+                    }
+                }
+
+                fn flush(&mut self) -> nb::Result<(), Self::Error>
+                {
+                    let status_register = unsafe { (&*$UART::ptr()).sr.read() };
+                    if status_register.txempty().bit_is_set() {
+                        Ok(())
+                    } else {
+                        Err(nb::Error::WouldBlock)
+                    }
+                }
+            }
+
+            impl Write<u8> for Tx<$UART>
+            {
+                type Error = Infallible;
+
+                fn write(&mut self, byte: u8) -> nb::Result<(), Self::Error>
+                {
+                    let status_register = unsafe { (&*$UART::ptr()).sr.read() };
+                    if status_register.txrdy().bit_is_set() {
+                        let uart = unsafe { (&*$UART::ptr()) };
+                        uart.thr.write_with_zero(|w| unsafe { w.txchr().bits(byte) });
+                        nb::Result::Ok(())
+                    } else {
+                        nb::Result::Err(nb::Error::WouldBlock)
+                    }
+                }
+
+                fn flush(&mut self) -> nb::Result<(), Self::Error>
+                {
+                    let status_register = unsafe { (&*$UART::ptr()).sr.read() };
+                    if status_register.txempty().bit_is_set() {
+                        Ok(())
+                    } else {
+                        Err(nb::Error::WouldBlock)
+                    }
+                }
+            }
+
+
             impl<TXPIN> Serial<$UART, TXPIN, ()>
             where
                 TXPIN: TxPin<$UART>,
             {
-                pub fn $uarttx(uart: $UART, txpin: TXPIN, config: Config) -> Self {
+                pub fn $uarttx(uart: $UART, txpin: TXPIN, config: Config, pmc: &PMC) -> Self {
                     let rxpin = ();
                     let serial = Serial { uart, pins: (txpin, rxpin) };
-                    serial.configure(config);
+                    serial.configure(config, pmc);
                     serial.uart.cr.write_with_zero(|w| w.txen().set_bit());
                     serial
                 }
@@ -291,10 +300,10 @@ macro_rules! uart {
             where
                 RXPIN: RxPin<$UART>
             {
-                pub fn $uartrx(uart: $UART, rxpin: RXPIN, config: Config) -> Self {
+                pub fn $uartrx(uart: $UART, rxpin: RXPIN, config: Config, pmc: &PMC) -> Self {
                     let txpin = ();
                     let serial = Serial { uart, pins: (txpin, rxpin)};
-                    serial.configure(config);
+                    serial.configure(config, pmc);
                     serial.uart.cr.write_with_zero(|w| w.rxen().set_bit());
                     serial
                 }
@@ -324,8 +333,9 @@ macro_rules! uart {
                     }
                 }
 
-                fn configure(&self, config: Config) {
+                fn configure(&self, config: Config, pmc: &PMC) {
                     let uart = &self.uart;
+                    pmc.$pmc_pcerx.write_with_zero(|w| w.$pid().set_bit());
                     let variant = self.get_mode(&config.channel_mode);
                     let parity = self.get_parity(&config.parity);
                     uart.mr.write_with_zero(|w|
@@ -333,7 +343,9 @@ macro_rules! uart {
                          .par().variant(parity)
                          .filter().bit(config.digital_filter)
                     );
-                    uart.brgr.write_with_zero(|w| unsafe { w.bits(config.baud_rate.0 as u32) });
+
+                    let read_baud_rate = 12_000_000u32 / ((config.baud_rate.0 as u32) * 16u32);
+                    uart.brgr.write_with_zero(|w| unsafe { w.bits(read_baud_rate) });
                 }
             }
         )+
@@ -341,9 +353,9 @@ macro_rules! uart {
 }
 
 uart! {
-    UART0: (uart0, uart0tx, uart0rx),
-    UART1: (uart1, uart1tx, uart1rx),
-    UART2: (uart2, uart2tx, uart2rx),
-    UART3: (uart3, uart3tx, uart3rx),
-    UART4: (uart4, uart4tx, uart4rx),
+    UART0: (uart0, uart0tx, uart0rx, pmc_pcer0, pid7),
+    UART1: (uart1, uart1tx, uart1rx, pmc_pcer0, pid8),
+    UART2: (uart2, uart2tx, uart2rx, pmc_pcer1, pid44),
+    UART3: (uart3, uart3tx, uart3rx, pmc_pcer1, pid45),
+    UART4: (uart4, uart4tx, uart4rx, pmc_pcer1, pid46),
 }

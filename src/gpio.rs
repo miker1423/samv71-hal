@@ -1,7 +1,6 @@
 use core::convert::Infallible;
 use core::marker::PhantomData;
 use embedded_hal::digital::v2::{toggleable, InputPin, OutputPin, StatefulOutputPin};
-use crate::pac::PIOA;
 pub trait GpioExt {
     type Parts;
 
@@ -22,6 +21,9 @@ pub struct AF3;
 
 pub struct OpenDrain;
 pub struct Floating;
+pub struct PullDown;
+pub struct PullUp;
+pub struct Analog;
 
 pub struct Alternate<AF> {
     _mode: PhantomData<AF>,
@@ -146,7 +148,7 @@ macro_rules! gpio {
                 use cortex_m::interrupt::CriticalSection;
 
                 use super::{
-                    Alternate, GpioExt, Input, OpenDrain, Output, Floating,
+                    Alternate, GpioExt, Input, OpenDrain, Output, Floating, PullUp, PullDown,
                     AF0, AF1, AF2, AF3,
                     Pin, GpioRegExt,
                 };
@@ -224,8 +226,21 @@ macro_rules! gpio {
                         }
 
                         //TODO: FALTA FLOATING INPUT
-                        //TODO: FALTA PULL DOWN INPUT
-                        //TODO: FALTA PULL UP INPUT
+
+                        pub fn into_pull_down_input(
+                            self, _cs: &CriticalSection
+                        ) -> $PXi<Input<PullDown>> {
+                            unsafe { (*$GPIOX::ptr()).ppder.write_with_zero(|w| w.bits(1 << $i)) };
+                            $PXi { _mode: PhantomData }
+                        }
+
+                        pub fn into_pull_up_input(
+                            self, _cs: &CriticalSection
+                        ) -> $PXi<Input<PullUp>> {
+                            unsafe { (*$GPIOX::ptr()).puer.write_with_zero(|w| w.bits(1 << $i)) };
+                            $PXi { _mode: PhantomData }
+                        }
+
                         //TODO: FALTA ANALOG
                         //TODO: FALTA OPEN DRAIN OUTPUT
                         //TODO: FALTA PUSH PULL OUTPUT
