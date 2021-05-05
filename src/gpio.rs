@@ -197,6 +197,11 @@ macro_rules! gpio {
                             self
                         }
 
+                        pub fn disable(self, _cs: &CriticalSection) -> Self {
+                            unsafe { (*$GPIOX::ptr()).pdr.write_with_zero(|w| w.bits(1 << $i)) };
+                            self
+                        }
+
                         pub fn into_alternate_af0(
                             self, _cs: &CriticalSection
                         ) -> $PXi<Alternate<AF0>> {
