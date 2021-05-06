@@ -1,7 +1,8 @@
 use embedded_hal::serial::{Read, Write};
 use core::convert::{ Infallible, Into };
 use core::marker::PhantomData;
-use crate::gpio::*;
+use samv71_hal::gpio::*;
+use crate::serial::BaudRate;
 use crate::pac::PMC;
 
 pub enum Parity {
@@ -23,14 +24,6 @@ pub enum UartError {
     Parity,
     Framing,
     Overrun,
-}
-
-pub struct BaudRate(pub u16);
-
-impl Into<BaudRate> for u16 {
-    fn into(self) -> BaudRate {
-        BaudRate(self)
-    }
 }
 
 pub trait RxPin<UART> {}
