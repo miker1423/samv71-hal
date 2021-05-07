@@ -1,7 +1,7 @@
 use embedded_hal::serial::{Read, Write};
-use core::convert::{ Infallible, Into };
+use core::convert::Infallible;
 use core::marker::PhantomData;
-use samv71_hal::gpio::*;
+use crate::gpio::*;
 use crate::serial::BaudRate;
 use crate::pac::PMC;
 

@@ -1,9 +1,6 @@
 use embedded_hal::serial::{Read, Write};
-use core::convert::{Infallible};
-use core::marker::PhantomData;
-use samv71_hal::gpio::*;
-use crate::serial::BaudRate;
-use crate::pac::PMC;
+use core::{convert::Infallible, marker::PhantomData };
+use crate::{gpio::*, serial::BaudRate, pac::PMC};
 
 pub enum Parity {
     Even,
@@ -381,7 +378,7 @@ macro_rules! usart {
 
                 fn configure(&self, config: &Config, pmc: &PMC) {
                     let usart = &self.usart;
-                    pmc.$pmc_pcerx.write_with_zero(|w| w.$pid().set_bit());
+                    //pmc.$pmc_pcerx.write_with_zero(|w| w.$pid().set_bit());
                     let mode = Self::get_mode(config);
                     let parity = Self::get_parity(config);
                     let usart_mode = Self::get_usart_mode(config);
@@ -396,7 +393,7 @@ macro_rules! usart {
                     });
 
                     let read_baud_rate = 12_000_000u32 / ((config.baud_rate.0 as u32) * 16u32);
-                    usart.brgr.write_with_zero(|w| unsafe { w.bits(read_baud_rate) });
+                    usart.brgr.write_with_zero(|w| unsafe { w.bits(78) });
                 }
             }
         )+
