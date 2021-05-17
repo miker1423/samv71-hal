@@ -1,6 +1,7 @@
 use core::convert::Infallible;
 use core::marker::PhantomData;
 use embedded_hal::digital::v2::{toggleable, InputPin, OutputPin, StatefulOutputPin};
+
 pub trait GpioExt {
     type Parts;
 

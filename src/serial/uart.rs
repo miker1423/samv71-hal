@@ -103,8 +103,6 @@ impl<UART, TXPIN, RXPIN> Serial<UART, TXPIN, RXPIN>
     }
 }
 
-
-
 pub struct Config {
     baud_rate: BaudRate,
     parity: Parity,
@@ -135,12 +133,19 @@ macro_rules! uart {
             use crate::pac::$UART;
 
             impl<TXPIN, RXPIN> Serial<$UART, TXPIN, RXPIN>
-            where
-                TXPIN: TxPin<$UART>,
-                RXPIN: RxPin<$UART>,
+                where
+                    TXPIN: TxPin<$UART>,
+                    RXPIN: RxPin<$UART>,
             {
                 pub fn $uart(uart: $UART, pins: (TXPIN, RXPIN), config: Config, pmc: &PMC) -> Self {
                     let serial = Serial { uart, pins };
+                    serial.uart.cr.write_with_zero(|w|
+                        w.txdis().set_bit()
+                            .rststa().set_bit()
+                            .rxdis().set_bit()
+                            .rstrx().set_bit()
+                            .rsttx().set_bit()
+                    );
                     serial.configure(config, pmc);
                     serial.uart.cr.write_with_zero(|w| w.txen().set_bit().rxen().set_bit());
                     serial
@@ -173,7 +178,7 @@ macro_rules! uart {
 
             impl<TXPIN, RXPIN> Read<u8> for Serial<$UART, TXPIN, RXPIN>
                 where
-                RXPIN: RxPin<$UART>
+                    RXPIN: RxPin<$UART>
             {
                 type Error = UartError;
 
@@ -277,8 +282,8 @@ macro_rules! uart {
 
 
             impl<TXPIN> Serial<$UART, TXPIN, ()>
-            where
-                TXPIN: TxPin<$UART>,
+                where
+                    TXPIN: TxPin<$UART>,
             {
                 pub fn $uarttx(uart: $UART, txpin: TXPIN, config: Config, pmc: &PMC) -> Self {
                     let rxpin = ();
@@ -290,8 +295,8 @@ macro_rules! uart {
             }
 
             impl<RXPIN> Serial<$UART, (), RXPIN>
-            where
-                RXPIN: RxPin<$UART>
+                where
+                    RXPIN: RxPin<$UART>
             {
                 pub fn $uartrx(uart: $UART, rxpin: RXPIN, config: Config, pmc: &PMC) -> Self {
                     let txpin = ();
@@ -328,7 +333,8 @@ macro_rules! uart {
 
                 fn configure(&self, config: Config, pmc: &PMC) {
                     let uart = &self.uart;
-                    pmc.$pmc_pcerx.write_with_zero(|w| w.$pid().set_bit());
+                    //pmc.$pmc_pcerx.write_with_zero(|w| w.$pid().set_bit());
+
                     let variant = self.get_mode(&config.channel_mode);
                     let parity = self.get_parity(&config.parity);
                     uart.mr.write_with_zero(|w|
@@ -337,8 +343,8 @@ macro_rules! uart {
                          .filter().bit(config.digital_filter)
                     );
 
-                    let read_baud_rate = 12_000_000u32 / ((config.baud_rate.0 as u32) * 16u32);
-                    uart.brgr.write_with_zero(|w| unsafe { w.bits(read_baud_rate) });
+                    let cd = 12_000_000u32 / ((config.baud_rate.0 as u32) * 16u32);
+                    uart.brgr.write_with_zero(|w| unsafe { w.bits(cd) });
                 }
             }
         )+
