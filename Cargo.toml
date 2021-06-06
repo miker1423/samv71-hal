@@ -10,7 +10,7 @@ edition = "2018"
 cortex-m = "0.6.4"
 embedded-hal = { version = "0.2.4", features = ["unproven"] }
 nb = "1.0.0"
-atsamv71q21 = { version = "0.1.0", path = "../atsamv71q21"}
+atsamv71q21 = { version = "0.2.0"}
 
 [dependencies.void]
 default-features = false

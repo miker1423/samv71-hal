@@ -1,5 +1,6 @@
 use core::convert::Infallible;
 use core::marker::PhantomData;
+use crate::pac::PMC;
 use embedded_hal::digital::v2::{toggleable, InputPin, OutputPin, StatefulOutputPin};
 
 pub trait GpioExt {
@@ -117,11 +118,11 @@ macro_rules! gpio_trait {
             }
 
             fn set_high(&self, pos: u8) {
-                self.sodr.write_with_zero(|w| unsafe { w.bits(1 << pos) });
+                unsafe { self.sodr.write_with_zero(|w| w.bits(1 << pos)); }
             }
 
             fn set_low(&self, pos: u8) {
-                self.codr.write_with_zero(|w| unsafe { w.bits(1 << pos) });
+                unsafe { self.codr.write_with_zero(|w| w.bits(1 << pos)); }
             }
         }
     }
@@ -136,7 +137,7 @@ gpio_trait!(pioe);
 
 
 macro_rules! gpio {
-    ([$($GPIOX:ident, $gpiox:ident, $iopxenr:ident, $PXx:ident => [
+    ([$($GPIOX:ident, $gpiox:ident, $iopxenr:ident, $PXx:ident, $pidx:ident => [
         $($PXi:ident: ($pxi:ident, $i:expr, $MODE:ty),)+
     ]),+]) => {
         $(
@@ -145,7 +146,7 @@ macro_rules! gpio {
                 use core::convert::Infallible;
 
                 use embedded_hal::digital::v2::{InputPin, OutputPin, StatefulOutputPin, toggleable};
-                use crate::pac::$GPIOX;
+                use crate::pac::{$GPIOX, PMC};
                 use cortex_m::interrupt::CriticalSection;
 
                 use super::{
@@ -164,6 +165,7 @@ macro_rules! gpio {
                     type Parts = Parts;
 
                     fn split(self) -> Parts {
+                        //pmc.pmc_pcer0.write_with_zero(|w| w.$pidx().set_bit());
                         Parts {
                             $(
                                 $pxi: $PXi { _mode:PhantomData },
@@ -182,8 +184,8 @@ macro_rules! gpio {
                         let value0 = mode & MASK;
                         let value1 = (mode >> 1) & MASK;
 
-                        abcdsr0.write_with_zero(|w| w.bits(value0 << index));
-                        abcdsr1.write_with_zero(|w| w.bits(value1 << index));
+                        abcdsr0.modify(|_, w| w.bits(value0 << index));
+                        abcdsr1.modify(|_, w| w.bits(value1 << index));
                     }
                 }
 
@@ -247,8 +249,14 @@ macro_rules! gpio {
                             $PXi { _mode: PhantomData }
                         }
 
+                        pub fn into_output(
+                            self, _cs: &CriticalSection
+                        ) -> $PXi<Output<OpenDrain>> {
+                            unsafe { (*$GPIOX::ptr()).oer.write_with_zero(|w| w.bits(1 << $i)) }
+                            $PXi { _mode: PhantomData }
+                        }
+
                         //TODO: FALTA ANALOG
-                        //TODO: FALTA OPEN DRAIN OUTPUT
                         //TODO: FALTA PUSH PULL OUTPUT
                         //TODO: FALTA PUSH PULL OUTPUT HS
                     }
@@ -331,7 +339,7 @@ macro_rules! gpio {
 }
 
 gpio!([
-    PIOA, pioa, iopaen, PA => [
+    PIOA, pioa, iopaen, PA, pid10 => [
         PA0: (pa0, 0, Input<Floating>),
         PA1: (pa1, 1, Input<Floating>),
         PA2: (pa2, 2, Input<Floating>),
@@ -365,7 +373,7 @@ gpio!([
         PA30: (pa30, 30, Input<Floating>),
         PA31: (pa31, 31, Input<Floating>),
 ],
-    PIOB, piob, iopben, PB => [
+    PIOB, piob, iopben, PB, pid11 => [
         PB0: (pb0, 0, Input<Floating>),
         PB1: (pb1, 1, Input<Floating>),
         PB2: (pb2, 2, Input<Floating>),
@@ -399,7 +407,7 @@ gpio!([
         PB30: (pb30, 30, Input<Floating>),
         PB31: (pb31, 31, Input<Floating>),
 ],
-    PIOC, pioc, iopcen, PC => [
+    PIOC, pioc, iopcen, PC, pid12 => [
         PC0: (pc0, 0, Input<Floating>),
         PC1: (pc1, 1, Input<Floating>),
         PC2: (pc2, 2, Input<Floating>),
@@ -433,7 +441,7 @@ gpio!([
         PC30: (pc30, 30, Input<Floating>),
         PC31: (pc31, 31, Input<Floating>),
 ],
-    PIOD, piod, iopden, PD => [
+    PIOD, piod, iopden, PD, pid16 => [
         PD0: (pd0, 0, Input<Floating>),
         PD1: (pd1, 1, Input<Floating>),
         PD2: (pd2, 2, Input<Floating>),
@@ -467,7 +475,7 @@ gpio!([
         PD30: (pd30, 30, Input<Floating>),
         PD31: (pd31, 31, Input<Floating>),
 ],
-    PIOE, pioe, iopeen, PE => [
+    PIOE, pioe, iopeen, PE, pid17 => [
         PE0: (pe0, 0, Input<Floating>),
         PE1: (pe1, 1, Input<Floating>),
         PE2: (pe2, 2, Input<Floating>),

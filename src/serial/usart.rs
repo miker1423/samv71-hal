@@ -170,7 +170,7 @@ macro_rules! usart {
                 pub fn $usart(usart: $USART, pins: (TXPIN, RXPIN), config: &Config, pmc: &PMC) -> Self {
                     let serial = Serial { usart, pins };
                     serial.configure(config, pmc);
-                    serial.usart.cr().write_with_zero(|w| w.txen().set_bit().rxen().set_bit());
+                    unsafe { serial.usart.cr().write_with_zero(|w| w.txen().set_bit().rxen().set_bit()); }
                     serial
                 }
             }
@@ -183,7 +183,7 @@ macro_rules! usart {
                     let rxpin = ();
                     let serial = Serial { usart, pins: (txpin, rxpin) };
                     serial.configure(config, pmc);
-                    serial.usart.cr().write_with_zero(|w| w.txen().set_bit());
+                    unsafe { serial.usart.cr().write_with_zero(|w| w.txen().set_bit()); }
                     serial
                 }
             }
@@ -196,7 +196,7 @@ macro_rules! usart {
                     let txpin = ();
                     let serial = Serial { usart, pins: (txpin, rxpin) };
                     serial.configure(config, pmc);
-                    serial.usart.cr().write_with_zero(|w| w.rxen().set_bit());
+                    unsafe { serial.usart.cr().write_with_zero(|w| w.rxen().set_bit()); }
                     serial
                 }
             }
@@ -285,7 +285,7 @@ macro_rules! usart {
                     let status_register = unsafe { (&*$USART::ptr()).csr().read() };
                     if status_register.txrdy().bit() {
                         let usart = unsafe { (&*$USART::ptr())};
-                        usart.thr.write_with_zero(|w| unsafe { w.txchr().bits(data) });
+                        unsafe { usart.thr.write_with_zero(|w| w.txchr().bits(data)); }
                         Ok(())
                     } else {
                         Err(nb::Error::WouldBlock)
@@ -312,7 +312,7 @@ macro_rules! usart {
                     let status_register = unsafe { (&*$USART::ptr()).csr().read() };
                     if status_register.txrdy().bit() {
                         let usart = unsafe { (&*$USART::ptr())};
-                        usart.thr.write_with_zero(|w| unsafe { w.txchr().bits(data) });
+                        unsafe { usart.thr.write_with_zero(|w| w.txchr().bits(data)); }
                         Ok(())
                     } else {
                         Err(nb::Error::WouldBlock)
@@ -378,22 +378,24 @@ macro_rules! usart {
 
                 fn configure(&self, config: &Config, pmc: &PMC) {
                     let usart = &self.usart;
-                    pmc.$pmc_pcerx.write_with_zero(|w| w.$pid().set_bit());
+                    unsafe { pmc.$pmc_pcerx.write_with_zero(|w| w.$pid().set_bit()); }
                     let mode = Self::get_mode(config);
                     let parity = Self::get_parity(config);
                     let usart_mode = Self::get_usart_mode(config);
                     let char_length = Self::get_char_length(config);
                     let is_sync = config.sync_mode == SyncMode::Sync;
-                    usart.mr().write_with_zero(|w| {
-                        w.usart_mode().variant(usart_mode)
-                            .par().variant(parity)
-                            .chmode().variant(mode)
-                            .chrl().variant(char_length)
-                            .sync().bit(is_sync)
-                    });
+                    unsafe {
+                        usart.mr().write_with_zero(|w| {
+                            w.usart_mode().variant(usart_mode)
+                                .par().variant(parity)
+                                .chmode().variant(mode)
+                                .chrl().variant(char_length)
+                                .sync().bit(is_sync)
+                        });
+                    }
 
                     let read_baud_rate = 12_000_000u32 / ((config.baud_rate.0 as u32) * 16u32);
-                    usart.brgr.write_with_zero(|w| unsafe { w.bits(read_baud_rate) });
+                    unsafe { usart.brgr.write_with_zero(|w| w.bits(read_baud_rate)); }
                 }
             }
         )+

@@ -37,8 +37,10 @@ impl watchdog::WatchdogDisable for Watchdog {
 impl watchdog::Watchdog for Watchdog {
     fn feed(&mut self) {
         let cr = &self.wdt.cr;
-        cr.write_with_zero(|w|
-            w.key().passwd()
-        );
+        unsafe {
+            cr.write_with_zero(|w|
+                w.key().passwd()
+            );
+        }
     }
 }

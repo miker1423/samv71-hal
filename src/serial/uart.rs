@@ -124,11 +124,11 @@ trait ConfigMethod {
 
     fn get_mode(&self, mode: &ChannelMode) -> Self::Mode;
 
-    fn configure(&self, config: Config, pmc: &PMC);
+    fn configure(&self, config: Config);
 }
 
 macro_rules! uart {
-    ($($UART:ident: ($uart:ident, $uarttx: ident, $uartrx:ident, $pmc_pcerx:ident, $pid:ident),)+) => {
+    ($($UART:ident: ($uart:ident, $uarttx: ident, $uartrx:ident, $pmc_pcerx:ident, $pidx:ident),)+) => {
         $(
             use crate::pac::$UART;
 
@@ -139,15 +139,64 @@ macro_rules! uart {
             {
                 pub fn $uart(uart: $UART, pins: (TXPIN, RXPIN), config: Config, pmc: &PMC) -> Self {
                     let serial = Serial { uart, pins };
-                    serial.uart.cr.write_with_zero(|w|
-                        w.txdis().set_bit()
-                            .rststa().set_bit()
-                            .rxdis().set_bit()
-                            .rstrx().set_bit()
-                            .rsttx().set_bit()
-                    );
-                    serial.configure(config, pmc);
-                    serial.uart.cr.write_with_zero(|w| w.txen().set_bit().rxen().set_bit());
+                    unsafe {
+                        pmc.$pmc_pcerx.write_with_zero(|w| w.$pidx().set_bit());
+                        serial.uart.cr.write_with_zero(|w|
+                            w.rstrx().set_bit()
+                                .rxdis().set_bit()
+                                .rsttx().set_bit()
+                                .txdis().set_bit()
+                                .rststa().set_bit()
+                        );
+                    }
+                    serial.configure(config);
+                    unsafe { serial.uart.cr.write_with_zero(|w| w.txen().set_bit().rxen().set_bit()); }
+                    serial
+                }
+            }
+
+            impl<RXPIN> Serial<$UART, (), RXPIN>
+                where
+                    RXPIN: RxPin<$UART>
+            {
+                pub fn $uartrx(uart: $UART, rxpin: RXPIN, config: Config, pmc: &PMC) -> Self {
+                    let txpin = ();
+                    let serial = Serial { uart, pins: (txpin, rxpin)};
+                    unsafe {
+                        pmc.$pmc_pcerx.write_with_zero(|w| w.$pidx().set_bit());
+                        serial.uart.cr.write_with_zero(|w|
+                            w.rstrx().set_bit()
+                                .rxdis().set_bit()
+                                .rsttx().set_bit()
+                                .txdis().set_bit()
+                                .rststa().set_bit()
+                        );
+                    }
+                    serial.configure(config);
+                    unsafe { serial.uart.cr.write_with_zero(|w| w.rxen().set_bit()); }
+                    serial
+                }
+            }
+
+            impl<TXPIN> Serial<$UART, TXPIN, ()>
+                where
+                    TXPIN: TxPin<$UART>,
+            {
+                pub fn $uarttx(uart: $UART, txpin: TXPIN, config: Config, pmc: &PMC) -> Self {
+                    let rxpin = ();
+                    let serial = Serial { uart, pins: (txpin, rxpin) };
+                    unsafe {
+                        pmc.$pmc_pcerx.write_with_zero(|w| w.$pidx().set_bit());
+                        serial.uart.cr.write_with_zero(|w|
+                            w.rstrx().set_bit()
+                                .rxdis().set_bit()
+                                .rsttx().set_bit()
+                                .txdis().set_bit()
+                                .rststa().set_bit()
+                        );
+                    }
+                    serial.configure(config);
+                    unsafe { serial.uart.cr.write_with_zero(|w| w.txen().set_bit()); }
                     serial
                 }
             }
@@ -233,9 +282,9 @@ macro_rules! uart {
                 fn write(&mut self, byte: u8) -> nb::Result<(), Self::Error>
                 {
                     let status_register = unsafe { (&*$UART::ptr()).sr.read() };
-                    if status_register.txrdy().bit_is_set() {
+                    if status_register.txrdy().bit() {
                         let uart = unsafe { (&*$UART::ptr()) };
-                        uart.thr.write_with_zero(|w| unsafe { w.txchr().bits(byte) });
+                        unsafe { uart.thr.write_with_zero(|w| w.txchr().bits(byte)); }
                         nb::Result::Ok(())
                     } else {
                         nb::Result::Err(nb::Error::WouldBlock)
@@ -245,7 +294,7 @@ macro_rules! uart {
                 fn flush(&mut self) -> nb::Result<(), Self::Error>
                 {
                     let status_register = unsafe { (&*$UART::ptr()).sr.read() };
-                    if status_register.txempty().bit_is_set() {
+                    if status_register.txempty().bit() {
                         Ok(())
                     } else {
                         Err(nb::Error::WouldBlock)
@@ -260,9 +309,9 @@ macro_rules! uart {
                 fn write(&mut self, byte: u8) -> nb::Result<(), Self::Error>
                 {
                     let status_register = unsafe { (&*$UART::ptr()).sr.read() };
-                    if status_register.txrdy().bit_is_set() {
+                    if status_register.txrdy().bit() {
                         let uart = unsafe { (&*$UART::ptr()) };
-                        uart.thr.write_with_zero(|w| unsafe { w.txchr().bits(byte) });
+                        unsafe { uart.thr.write_with_zero(|w| w.txchr().bits(byte)); }
                         nb::Result::Ok(())
                     } else {
                         nb::Result::Err(nb::Error::WouldBlock)
@@ -272,38 +321,11 @@ macro_rules! uart {
                 fn flush(&mut self) -> nb::Result<(), Self::Error>
                 {
                     let status_register = unsafe { (&*$UART::ptr()).sr.read() };
-                    if status_register.txempty().bit_is_set() {
+                    if status_register.txempty().bit() {
                         Ok(())
                     } else {
                         Err(nb::Error::WouldBlock)
                     }
-                }
-            }
-
-
-            impl<TXPIN> Serial<$UART, TXPIN, ()>
-                where
-                    TXPIN: TxPin<$UART>,
-            {
-                pub fn $uarttx(uart: $UART, txpin: TXPIN, config: Config, pmc: &PMC) -> Self {
-                    let rxpin = ();
-                    let serial = Serial { uart, pins: (txpin, rxpin) };
-                    serial.configure(config, pmc);
-                    serial.uart.cr.write_with_zero(|w| w.txen().set_bit());
-                    serial
-                }
-            }
-
-            impl<RXPIN> Serial<$UART, (), RXPIN>
-                where
-                    RXPIN: RxPin<$UART>
-            {
-                pub fn $uartrx(uart: $UART, rxpin: RXPIN, config: Config, pmc: &PMC) -> Self {
-                    let txpin = ();
-                    let serial = Serial { uart, pins: (txpin, rxpin)};
-                    serial.configure(config, pmc);
-                    serial.uart.cr.write_with_zero(|w| w.rxen().set_bit());
-                    serial
                 }
             }
 
@@ -320,7 +342,6 @@ macro_rules! uart {
                     }
                 }
 
-
                 fn get_parity(&self, parity: &Parity) -> Self::Parity {
                     match *parity {
                         Parity::Even => Self::Parity::EVEN,
@@ -331,20 +352,21 @@ macro_rules! uart {
                     }
                 }
 
-                fn configure(&self, config: Config, pmc: &PMC) {
+                fn configure(&self, config: Config) {
                     let uart = &self.uart;
-                    //pmc.$pmc_pcerx.write_with_zero(|w| w.$pid().set_bit());
-
-                    let variant = self.get_mode(&config.channel_mode);
+                    let mode = self.get_mode(&config.channel_mode);
                     let parity = self.get_parity(&config.parity);
-                    uart.mr.write_with_zero(|w|
-                        w.chmode().variant(variant)
-                         .par().variant(parity)
-                         .filter().bit(config.digital_filter)
-                    );
+                    unsafe {
+                        uart.mr.write_with_zero(|w|
+                            w.chmode().variant(mode)
+                             .par().variant(parity)
+                             .filter().bit(config.digital_filter)
+                             .brsrcck().periph_clk()
+                        );
+                    }
 
-                    let cd = 12_000_000u32 / ((config.baud_rate.0 as u32) * 16u32);
-                    uart.brgr.write_with_zero(|w| unsafe { w.bits(cd) });
+                    let cd = 150_000_000 / (config.baud_rate.0 * 16);
+                    unsafe { uart.brgr.write_with_zero(|w| w.cd().bits(cd as u16)); }
                 }
             }
         )+
