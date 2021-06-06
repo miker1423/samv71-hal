@@ -6,7 +6,7 @@ use embedded_hal::digital::v2::{toggleable, InputPin, OutputPin, StatefulOutputP
 pub trait GpioExt {
     type Parts;
 
-    fn split(self) -> Self::Parts;
+    fn split(self, pmc: &PMC) -> Self::Parts;
 }
 
 trait GpioRegExt {
@@ -164,8 +164,8 @@ macro_rules! gpio {
                 impl GpioExt for $GPIOX {
                     type Parts = Parts;
 
-                    fn split(self) -> Parts {
-                        //pmc.pmc_pcer0.write_with_zero(|w| w.$pidx().set_bit());
+                    fn split(self, pmc: &PMC) -> Parts {
+                        unsafe { pmc.pmc_pcer0.write_with_zero(|w| w.$pidx().set_bit()) };
                         Parts {
                             $(
                                 $pxi: $PXi { _mode:PhantomData },
